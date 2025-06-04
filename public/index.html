@@ -1,0 +1,230 @@
+<html>
+
+<head>
+  <title>紅龍果價格查詢系統</title>
+  <link rel="stylesheet" href="/stylesheets/style.css">
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f8f8f8; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px #0001; padding: 32px 24px; }
+    .btn-group { display: flex; justify-content: center; gap: 24px; margin-bottom: 32px; }
+    .btn-main { font-size: 1.2em; padding: 12px 32px; border: none; border-radius: 6px; background: #6c3; color: #fff; cursor: pointer; transition: background 0.2s; }
+    .btn-main:hover { background: #4a2; }
+    .section { display: none; margin-top: 24px; }
+    .section.active { display: block; }
+    form label { display: block; margin: 12px 0 8px; }
+    form input, form select { padding: 6px 10px; border-radius: 4px; border: 1px solid #ccc; margin-left: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 18px; }
+    th, td { border: 1px solid #ccc; padding: 8px 0; text-align: center; }
+    th { background: #e0ffe0; }
+    #formMsg, #queryMsg { margin-top: 12px; color: #0a0; font-weight: bold; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1 style="text-align:center;margin-bottom:32px;">紅龍果價格查詢及新增系統</h1>
+    <div class="btn-group" id="mainBtns">
+      <button class="btn-main" id="showQuery">查詢價格</button>
+      <button class="btn-main" id="showAdd">新增資料</button>
+    </div>
+
+    <div class="section" id="querySection" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h2 style="margin:0;">查詢紅龍果價格</h2>
+        <button class="btn-main" id="backToMenu1" style="margin-left:16px;">回到主選單</button>
+      </div>
+      <form id="queryForm">
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="chkYear" onchange="document.getElementById('yearSelect').disabled = !this.checked;">
+          年份：<select id="yearSelect" disabled></select>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="chkMonth" onchange="document.getElementById('monthSelect').disabled = !this.checked;">
+          月份：<select id="monthSelect" disabled></select>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="chkMin" onchange="document.getElementById('minPrice').disabled = !this.checked;">
+          價格下限：<input type="number" id="minPrice" min="0" step="0.01" style="width:100px;" disabled>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="chkMax" onchange="document.getElementById('maxPrice').disabled = !this.checked;">
+          價格上限：<input type="number" id="maxPrice" min="0" step="0.01" style="width:100px;" disabled>
+        </label>
+        <button type="submit" style="margin-top:18px;font-size:0.95em;padding:6px 18px;">查詢</button>
+      </form>
+      <div id="queryMsg"></div>
+      <hr>
+      <h2>紅龍果歷年價格</h2>
+      <table id="queryTable">
+        <thead>
+          <tr>
+            <th>產品名稱</th>
+            <th>日期</th>
+            <th>價格(元/公斤)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="section" id="addSection" style="display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h2 style="margin:0;">新增交易資料</h2>
+        <button class="btn-main" id="backToMenu2" style="margin-left:16px;">回到主選單</button>
+      </div>
+      <form id="guavaForm">
+        <label>日期：<input type="text" name="date" required placeholder="2025年6月"></label>
+        <label>價格(元/公斤)：<input type="number" name="price" required step="0.01"></label>
+        <label>交易量(可不填)：<input type="number" name="amount" step="0.01"></label>
+        <button type="submit">送出</button>
+      </form>
+      <div id="formMsg"></div>
+      <hr>
+      <h2>紅龍果歷年價格</h2>
+      <table id="guavaTable" style="display:none;">
+        <thead>
+          <tr>
+            <th>產品名稱</th>
+            <th>日期</th>
+            <th>價格(元/公斤)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+  <script>
+    // 切換顯示區塊
+    const querySection = document.getElementById('querySection');
+    const addSection = document.getElementById('addSection');
+    const mainBtns = document.getElementById('mainBtns');
+    const queryTable = document.getElementById('queryTable');
+    const guavaTable = document.getElementById('guavaTable');
+    document.getElementById('showQuery').onclick = () => {
+      mainBtns.style.display = 'none';
+      querySection.style.display = 'block';
+      addSection.style.display = 'none';
+      // 預設顯示全部資料
+      loadQueryTable();
+    };
+    function showTable() {
+      guavaTable.style.display = '';
+    }
+    document.getElementById('showAdd').onclick = () => {
+      mainBtns.style.display = 'none';
+      addSection.style.display = 'block';
+      querySection.style.display = 'none';
+      showTable();
+    };
+    document.getElementById('backToMenu1').onclick = document.getElementById('backToMenu2').onclick = function() {
+      mainBtns.style.display = 'flex';
+      querySection.style.display = 'none';
+      addSection.style.display = 'none';
+    };
+    // 預設全部隱藏
+    querySection.style.display = 'none';
+    addSection.style.display = 'none';
+
+    // 產生年份與月份下拉選單
+    const yearSelect = document.getElementById('yearSelect');
+    const monthSelect = document.getElementById('monthSelect');
+    for (let y = 2004; y <= 2024; y++) {
+      const opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y + '年';
+      yearSelect.appendChild(opt);
+    }
+    for (let m = 6; m <= 11; m++) {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m + '月';
+      monthSelect.appendChild(opt);
+    }
+
+    async function loadTable() {
+      const res = await fetch('/api/guava');
+      const data = await res.json();
+      const tbody = document.querySelector('#guavaTable tbody');
+      tbody.innerHTML = '';
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${row.name}</td><td>${row.date}</td><td>${row.price}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+    loadTable();
+
+    async function loadQueryTable(filterDate, customData) {
+      let data;
+      if (customData) {
+        data = customData;
+      } else {
+        const res = await fetch('/api/guava');
+        data = await res.json();
+        if (filterDate) {
+          data = data.filter(row => row.date === filterDate);
+        }
+      }
+      const tbody = queryTable.querySelector('tbody');
+      tbody.innerHTML = '';
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${row.name}</td><td>${row.date}</td><td>${row.price}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    document.getElementById('guavaForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const form = e.target;
+      const formData = new FormData(form);
+      const params = new URLSearchParams();
+      for (const pair of formData.entries()) {
+        params.append(pair[0], pair[1]);
+      }
+      const res = await fetch('/api/insert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+      });
+      document.getElementById('formMsg').textContent = await res.text();
+      loadTable();
+      form.reset();
+    });
+
+    document.getElementById('queryForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const chkYear = document.getElementById('chkYear').checked;
+      const chkMonth = document.getElementById('chkMonth').checked;
+      const chkMin = document.getElementById('chkMin').checked;
+      const chkMax = document.getElementById('chkMax').checked;
+      if (!chkYear && !chkMonth && !chkMin && !chkMax) {
+        document.getElementById('queryMsg').textContent = '請至少選擇一項查詢條件';
+        return;
+      }
+      const year = document.getElementById('yearSelect').value;
+      const month = document.getElementById('monthSelect').value;
+      const minPrice = parseFloat(document.getElementById('minPrice').value);
+      const maxPrice = parseFloat(document.getElementById('maxPrice').value);
+      const res = await fetch('/api/guava');
+      const data = await res.json();
+      let filtered = data;
+      if (chkYear) {
+        filtered = filtered.filter(row => row.date && row.date.startsWith(year + '年'));
+      }
+      if (chkMonth) {
+        filtered = filtered.filter(row => row.date && row.date.endsWith(parseInt(month) + '月'));
+      }
+      if (chkMin) {
+        filtered = filtered.filter(row => row.price >= minPrice);
+      }
+      if (chkMax) {
+        filtered = filtered.filter(row => row.price <= maxPrice);
+      }
+      document.getElementById('queryMsg').textContent = filtered.length ? `查詢結果共 ${filtered.length} 筆` : '查無資料';
+      loadQueryTable(null, filtered);
+    });
+  </script>
+</body>
+
+</html>
