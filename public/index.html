@@ -35,12 +35,18 @@
       </div>
       <form id="queryForm">
         <label style="display:flex;align-items:center;gap:8px;">
-          <input type="checkbox" id="chkYear" onchange="document.getElementById('yearSelect').disabled = !this.checked;">
-          年份：<select id="yearSelect" disabled></select>
+          <input type="checkbox" id="chkYear" onchange="document.getElementById('yearStart').disabled = document.getElementById('yearEnd').disabled = !this.checked;">
+          年份：
+          <select id="yearStart" disabled></select>
+          ~
+          <select id="yearEnd" disabled></select>
         </label>
         <label style="display:flex;align-items:center;gap:8px;">
-          <input type="checkbox" id="chkMonth" onchange="document.getElementById('monthSelect').disabled = !this.checked;">
-          月份：<select id="monthSelect" disabled></select>
+          <input type="checkbox" id="chkMonth" onchange="document.getElementById('monthStart').disabled = document.getElementById('monthEnd').disabled = !this.checked;">
+          月份：
+          <select id="monthStart" disabled></select>
+          ~
+          <select id="monthEnd" disabled></select>
         </label>
         <label style="display:flex;align-items:center;gap:8px;">
           <input type="checkbox" id="chkMin" onchange="document.getElementById('minPrice').disabled = !this.checked;">
@@ -51,6 +57,7 @@
           價格上限：<input type="number" id="maxPrice" min="0" step="0.01" style="width:100px;" disabled>
         </label>
         <button type="submit" style="margin-top:18px;font-size:0.95em;padding:6px 18px;">查詢</button>
+        <button type="button" id="toggleChartBtn" style="margin-top:18px;font-size:0.95em;padding:6px 18px;margin-left:8px;">啟用圖表統計</button>
       </form>
       <div id="queryMsg"></div>
       <hr>
@@ -59,12 +66,14 @@
         <thead>
           <tr>
             <th>產品名稱</th>
-            <th>日期</th>
-            <th>價格(元/公斤)</th>
+            <th id="thDate" style="cursor:pointer;">日期 <span id="dateSortIcon">▲</span></th>
+            <th id="thPrice" style="cursor:pointer;">價格(元/公斤) <span id="priceSortIcon"></span></th>
           </tr>
         </thead>
         <tbody></tbody>
       </table>
+      <div id="pagination" style="text-align:center;margin-top:12px;"></div>
+      <canvas id="chart" style="margin-top:24px;max-width:100%;display:none;"></canvas>
     </div>
 
     <div class="section" id="addSection" style="display:none;">
@@ -126,19 +135,25 @@
     addSection.style.display = 'none';
 
     // 產生年份與月份下拉選單
-    const yearSelect = document.getElementById('yearSelect');
-    const monthSelect = document.getElementById('monthSelect');
+    const yearStart = document.getElementById('yearStart');
+    const yearEnd = document.getElementById('yearEnd');
+    const monthStart = document.getElementById('monthStart');
+    const monthEnd = document.getElementById('monthEnd');
     for (let y = 2004; y <= 2024; y++) {
-      const opt = document.createElement('option');
-      opt.value = y;
-      opt.textContent = y + '年';
-      yearSelect.appendChild(opt);
+      let opt1 = document.createElement('option');
+      let opt2 = document.createElement('option');
+      opt1.value = opt2.value = y;
+      opt1.textContent = opt2.textContent = y + '年';
+      yearStart.appendChild(opt1);
+      yearEnd.appendChild(opt2);
     }
     for (let m = 6; m <= 11; m++) {
-      const opt = document.createElement('option');
-      opt.value = m;
-      opt.textContent = m + '月';
-      monthSelect.appendChild(opt);
+      let opt1 = document.createElement('option');
+      let opt2 = document.createElement('option');
+      opt1.value = opt2.value = m;
+      opt1.textContent = opt2.textContent = m + '月';
+      monthStart.appendChild(opt1);
+      monthEnd.appendChild(opt2);
     }
 
     async function loadTable() {
@@ -154,17 +169,51 @@
     }
     loadTable();
 
-    async function loadQueryTable(filterDate, customData) {
-      let data;
-      if (customData) {
-        data = customData;
-      } else {
-        const res = await fetch('/api/guava');
-        data = await res.json();
-        if (filterDate) {
-          data = data.filter(row => row.date === filterDate);
-        }
-      }
+    let currentPage = 1;
+    let pageSize = 10;
+    let sortBy = 'date';
+    let order = 'asc';
+    let lastQuery = {};
+
+    async function fetchAllQueryData(query = {}) {
+      // 取得所有篩選後資料（不分頁）
+      const params = new URLSearchParams({
+        page: 1,
+        pageSize: 10000, // 假設資料不會超過這個數量
+        sortBy,
+        order
+      });
+      if (query.yearStart) params.append('yearStart', query.yearStart);
+      if (query.yearEnd) params.append('yearEnd', query.yearEnd);
+      if (query.monthStart) params.append('monthStart', query.monthStart);
+      if (query.monthEnd) params.append('monthEnd', query.monthEnd);
+      if (query.minPrice) params.append('minPrice', query.minPrice);
+      if (query.maxPrice) params.append('maxPrice', query.maxPrice);
+      const res = await fetch('/api/guava?' + params.toString());
+      const result = await res.json();
+      return result.data || [];
+    }
+
+    async function loadQueryTable(query = {}) {
+      // 儲存查詢條件
+      lastQuery = query;
+      const params = new URLSearchParams({
+        page: currentPage,
+        pageSize,
+        sortBy,
+        order
+      });
+      // 篩選條件
+      if (query.yearStart) params.append('yearStart', query.yearStart);
+      if (query.yearEnd) params.append('yearEnd', query.yearEnd);
+      if (query.monthStart) params.append('monthStart', query.monthStart);
+      if (query.monthEnd) params.append('monthEnd', query.monthEnd);
+      if (query.minPrice) params.append('minPrice', query.minPrice);
+      if (query.maxPrice) params.append('maxPrice', query.maxPrice);
+      const res = await fetch('/api/guava?' + params.toString());
+      const result = await res.json();
+      const data = result.data || [];
+      const total = result.total || 0;
       const tbody = queryTable.querySelector('tbody');
       tbody.innerHTML = '';
       data.forEach(row => {
@@ -172,7 +221,59 @@
         tr.innerHTML = `<td>${row.name}</td><td>${row.date}</td><td>${row.price}</td>`;
         tbody.appendChild(tr);
       });
+      // 分頁
+      renderPagination(total);
+      // 排序圖示
+      document.getElementById('dateSortIcon').textContent = sortBy==='date' ? (order==='asc'?'▲':'▼') : '';
+      document.getElementById('priceSortIcon').textContent = sortBy==='price' ? (order==='asc'?'▲':'▼') : '';
+      // 圖表（用所有篩選後資料，不分頁）
+      if (chartEnabled) {
+        const allData = await fetchAllQueryData(query);
+        renderChart(allData);
+        document.getElementById('chart').style.display = '';
+      } else {
+        document.getElementById('chart').style.display = 'none';
+      }
     }
+
+    function renderPagination(total) {
+      const pageCount = Math.ceil(total / pageSize);
+      const pagination = document.getElementById('pagination');
+      let html = '';
+      if (currentPage > 1) html += `<button id="prevPage">上一頁</button>`;
+      // 頁碼按鈕
+      for (let i = 1; i <= pageCount; i++) {
+        if (i === currentPage) {
+          html += `<button class="page-btn" style="font-weight:bold;background:#cfc;">${i}</button>`;
+        } else {
+          html += `<button class="page-btn" data-page="${i}">${i}</button>`;
+        }
+      }
+      if (currentPage < pageCount) html += `<button id="nextPage">下一頁</button>`;
+      pagination.innerHTML = html;
+      if (currentPage > 1) document.getElementById('prevPage').onclick = () => { currentPage--; loadQueryTable(lastQuery); };
+      if (currentPage < pageCount) document.getElementById('nextPage').onclick = () => { currentPage++; loadQueryTable(lastQuery); };
+      // 頁碼點擊
+      document.querySelectorAll('.page-btn[data-page]').forEach(btn => {
+        btn.onclick = function() {
+          currentPage = parseInt(this.getAttribute('data-page'));
+          loadQueryTable(lastQuery);
+        };
+      });
+    }
+
+    document.getElementById('thDate').onclick = function() {
+      if (sortBy === 'date') order = order === 'asc' ? 'desc' : 'asc';
+      else { sortBy = 'date'; order = 'asc'; }
+      currentPage = 1;
+      loadQueryTable(lastQuery);
+    };
+    document.getElementById('thPrice').onclick = function() {
+      if (sortBy === 'price') order = order === 'asc' ? 'desc' : 'asc';
+      else { sortBy = 'price'; order = 'asc'; }
+      currentPage = 1;
+      loadQueryTable(lastQuery);
+    };
 
     document.getElementById('guavaForm').addEventListener('submit', async function(e) {
       e.preventDefault();
@@ -192,7 +293,7 @@
       form.reset();
     });
 
-    document.getElementById('queryForm').addEventListener('submit', async function(e) {
+    document.getElementById('queryForm').addEventListener('submit', function(e) {
       e.preventDefault();
       const chkYear = document.getElementById('chkYear').checked;
       const chkMonth = document.getElementById('chkMonth').checked;
@@ -202,28 +303,78 @@
         document.getElementById('queryMsg').textContent = '請至少選擇一項查詢條件';
         return;
       }
-      const year = document.getElementById('yearSelect').value;
-      const month = document.getElementById('monthSelect').value;
-      const minPrice = parseFloat(document.getElementById('minPrice').value);
-      const maxPrice = parseFloat(document.getElementById('maxPrice').value);
-      const res = await fetch('/api/guava');
-      const data = await res.json();
-      let filtered = data;
-      if (chkYear) {
-        filtered = filtered.filter(row => row.date && row.date.startsWith(year + '年'));
-      }
-      if (chkMonth) {
-        filtered = filtered.filter(row => row.date && row.date.endsWith(parseInt(month) + '月'));
-      }
-      if (chkMin) {
-        filtered = filtered.filter(row => row.price >= minPrice);
-      }
-      if (chkMax) {
-        filtered = filtered.filter(row => row.price <= maxPrice);
-      }
-      document.getElementById('queryMsg').textContent = filtered.length ? `查詢結果共 ${filtered.length} 筆` : '查無資料';
-      loadQueryTable(null, filtered);
+      const yearStartVal = document.getElementById('yearStart').value;
+      const yearEndVal = document.getElementById('yearEnd').value;
+      const monthStartVal = document.getElementById('monthStart').value;
+      const monthEndVal = document.getElementById('monthEnd').value;
+      const minPrice = document.getElementById('minPrice').value;
+      const maxPrice = document.getElementById('maxPrice').value;
+      const query = {};
+      if (chkYear) { query.yearStart = yearStartVal; query.yearEnd = yearEndVal; }
+      if (chkMonth) { query.monthStart = monthStartVal; query.monthEnd = monthEndVal; }
+      if (chkMin) query.minPrice = minPrice;
+      if (chkMax) query.maxPrice = maxPrice;
+      currentPage = 1;
+      loadQueryTable(query);
     });
+
+    // 載入 Chart.js
+    const chartScript = document.createElement('script');
+    chartScript.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+    document.head.appendChild(chartScript);
+    let chartInstance = null;
+
+    function renderChart(data) {
+      if (!window.Chart) return; // Chart.js 尚未載入
+      const ctx = document.getElementById('chart').getContext('2d');
+      const labels = data.map(row => row.date);
+      const prices = data.map(row => row.price);
+      if (chartInstance) chartInstance.destroy();
+      chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '價格(元/公斤)',
+            data: prices,
+            borderColor: 'rgba(75,192,192,1)',
+            backgroundColor: 'rgba(75,192,192,0.2)',
+            fill: true,
+            tension: 0.2
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: true },
+            title: { display: true, text: '紅龍果價格走勢' }
+          },
+          scales: {
+            x: { title: { display: true, text: '日期' } },
+            y: { title: { display: true, text: '價格(元/公斤)' } }
+          }
+        }
+      });
+    }
+
+    let chartEnabled = false;
+    document.getElementById('toggleChartBtn').onclick = async function() {
+      chartEnabled = !chartEnabled;
+      const chart = document.getElementById('chart');
+      if (chartEnabled) {
+        chart.style.display = '';
+        this.textContent = '隱藏圖表統計';
+        // 若已查詢過則直接顯示圖表
+        const allData = await fetchAllQueryData(lastQuery);
+        renderChart(allData);
+      } else {
+        chart.style.display = 'none';
+        this.textContent = '啟用圖表統計';
+      }
+    };
+
+    // 預設載入全部
+    loadQueryTable();
   </script>
 </body>
 
