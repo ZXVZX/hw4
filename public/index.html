@@ -4,7 +4,8 @@
   <title>紅龍果價格查詢系統</title>
   <link rel="stylesheet" href="/stylesheets/style.css">
   <style>
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f8f8f8; margin: 0; padding: 0; }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #ffeaea; margin: 0; padding: 0; }
     .container { max-width: 600px; margin: 40px auto; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px #0001; padding: 32px 24px; }
     .btn-group { display: flex; justify-content: center; gap: 24px; margin-bottom: 32px; }
     .btn-main { font-size: 1.2em; padding: 12px 32px; border: none; border-radius: 6px; background: #6c3; color: #fff; cursor: pointer; transition: background 0.2s; }
@@ -22,6 +23,9 @@
 
 <body>
   <div class="container">
+    <div id="loading" style="display:none;position:fixed;left:0;top:0;width:100vw;height:100vh;background:rgba(255,255,255,0.6);z-index:9999;align-items:center;justify-content:center;">
+      <div style="border:6px solid #eee;border-top:6px solid #6c3;border-radius:50%;width:48px;height:48px;animation:spin 1s linear infinite;"></div>
+    </div>
     <h1 style="text-align:center;margin-bottom:32px;">紅龍果價格查詢及新增系統</h1>
     <div class="btn-group" id="mainBtns">
       <button class="btn-main" id="showQuery">查詢價格</button>
@@ -74,6 +78,7 @@
       </table>
       <div id="pagination" style="text-align:center;margin-top:12px;"></div>
       <canvas id="chart" style="margin-top:24px;max-width:100%;display:none;"></canvas>
+      <div id="chartStats" style="margin-top:16px;display:none;"></div>
     </div>
 
     <div class="section" id="addSection" style="display:none;">
@@ -82,8 +87,8 @@
         <button class="btn-main" id="backToMenu2" style="margin-left:16px;">回到主選單</button>
       </div>
       <form id="guavaForm">
-        <label>日期：<input type="text" name="date" required placeholder="2025年6月"></label>
-        <label>價格(元/公斤)：<input type="number" name="price" required step="0.01"></label>
+        <label>日期：<input type="text" name="date" required placeholder="2025年6月"><span class="error-msg" id="dateError" style="color:red;display:none;margin-left:8px;"></span></label>
+        <label>價格(元/公斤)：<input type="number" name="price" required step="0.01"><span class="error-msg" id="priceError" style="color:red;display:none;margin-left:8px;"></span></label>
         <label>交易量(可不填)：<input type="number" name="amount" step="0.01"></label>
         <button type="submit">送出</button>
       </form>
@@ -156,7 +161,24 @@
       monthEnd.appendChild(opt2);
     }
 
+    // loading 控制函數（查詢時延遲0.5秒才顯示，其餘立即顯示）
+    let loadingTimer = null;
+    function showLoading(type = 'default') {
+      if (type === 'query') {
+        loadingTimer = setTimeout(() => {
+          document.getElementById('loading').style.display = 'flex';
+        }, 500);
+      } else {
+        document.getElementById('loading').style.display = 'flex';
+      }
+    }
+    function hideLoading() {
+      clearTimeout(loadingTimer);
+      document.getElementById('loading').style.display = 'none';
+    }
+
     async function loadTable() {
+      showLoading(); // 新增資料時立即顯示 loading
       const res = await fetch('/api/guava');
       const data = await res.json();
       const tbody = document.querySelector('#guavaTable tbody');
@@ -166,6 +188,7 @@
         tr.innerHTML = `<td>${row.name}</td><td>${row.date}</td><td>${row.price}</td>`;
         tbody.appendChild(tr);
       });
+      hideLoading();
     }
     loadTable();
 
@@ -195,6 +218,7 @@
     }
 
     async function loadQueryTable(query = {}) {
+      showLoading('query'); // 查詢時延遲0.5秒才顯示 loading
       // 儲存查詢條件
       lastQuery = query;
       const params = new URLSearchParams({
@@ -216,11 +240,17 @@
       const total = result.total || 0;
       const tbody = queryTable.querySelector('tbody');
       tbody.innerHTML = '';
-      data.forEach(row => {
+      if (data.length === 0) {
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${row.name}</td><td>${row.date}</td><td>${row.price}</td>`;
+        tr.innerHTML = `<td colspan="3" style="color:red;">查無資料</td>`;
         tbody.appendChild(tr);
-      });
+      } else {
+        data.forEach(row => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${row.name}</td><td>${row.date}</td><td>${row.price}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
       // 分頁
       renderPagination(total);
       // 排序圖示
@@ -231,9 +261,12 @@
         const allData = await fetchAllQueryData(query);
         renderChart(allData);
         document.getElementById('chart').style.display = '';
+        renderChartStats(allData);
       } else {
         document.getElementById('chart').style.display = 'none';
+        document.getElementById('chartStats').style.display = 'none';
       }
+      hideLoading();
     }
 
     function renderPagination(total) {
@@ -275,8 +308,50 @@
       loadQueryTable(lastQuery);
     };
 
+    // 新增表單即時驗證
+    const dateInput = document.querySelector('input[name="date"]');
+    const priceInput = document.querySelector('input[name="price"]');
+    const dateError = document.getElementById('dateError');
+    const priceError = document.getElementById('priceError');
+
+    dateInput.addEventListener('input', function() {
+      if (!/^\d{4}年(0?[5-9]|1[0-1])月$/.test(this.value)) {
+        dateError.textContent = '格式須為 2025年6月';
+        dateError.style.display = '';
+      } else {
+        dateError.textContent = '';
+        dateError.style.display = 'none';
+      }
+    });
+    priceInput.addEventListener('input', function() {
+      if (this.value === '' || isNaN(this.value) || Number(this.value) <= 0) {
+        priceError.textContent = '請輸入正確價格';
+        priceError.style.display = '';
+      } else {
+        priceError.textContent = '';
+        priceError.style.display = 'none';
+      }
+    });
+
     document.getElementById('guavaForm').addEventListener('submit', async function(e) {
       e.preventDefault();
+      showLoading();
+      // 驗證
+      let valid = true;
+      if (!/^\d{4}年(0?[5-9]|1[0-1])月$/.test(dateInput.value)) {
+        dateError.textContent = '格式須為 2025年6月';
+        dateError.style.display = '';
+        valid = false;
+      }
+      if (priceInput.value === '' || isNaN(priceInput.value) || Number(priceInput.value) <= 0) {
+        priceError.textContent = '請輸入正確價格';
+        priceError.style.display = '';
+        valid = false;
+      }
+      if (!valid) {
+        hideLoading();
+        return;
+      }
       const form = e.target;
       const formData = new FormData(form);
       const params = new URLSearchParams();
@@ -291,6 +366,9 @@
       document.getElementById('formMsg').textContent = await res.text();
       loadTable();
       form.reset();
+      hideLoading();
+      dateError.style.display = 'none';
+      priceError.style.display = 'none';
     });
 
     document.getElementById('queryForm').addEventListener('submit', function(e) {
@@ -299,8 +377,10 @@
       const chkMonth = document.getElementById('chkMonth').checked;
       const chkMin = document.getElementById('chkMin').checked;
       const chkMax = document.getElementById('chkMax').checked;
+      // 若未勾選任何條件，直接查詢所有資料
       if (!chkYear && !chkMonth && !chkMin && !chkMax) {
-        document.getElementById('queryMsg').textContent = '請至少選擇一項查詢條件';
+        currentPage = 1;
+        loadQueryTable({});
         return;
       }
       const yearStartVal = document.getElementById('yearStart').value;
@@ -357,18 +437,42 @@
       });
     }
 
+    function renderChartStats(data) {
+      const statsDiv = document.getElementById('chartStats');
+      if (!data || data.length === 0) {
+        statsDiv.style.display = 'none';
+        statsDiv.innerHTML = '';
+        return;
+      }
+      let sum = 0, max = -Infinity, min = Infinity, maxRow = null, minRow = null;
+      data.forEach(row => {
+        sum += row.price;
+        if (row.price > max) { max = row.price; maxRow = row; }
+        if (row.price < min) { min = row.price; minRow = row; }
+      });
+      const avg = (sum / data.length).toFixed(2);
+      statsDiv.innerHTML =
+        `<b>平均價格：</b>${avg} 元/公斤<br>` +
+        `<b>最高價格：</b>${max} 元/公斤（${maxRow ? maxRow.date : ''}）<br>` +
+        `<b>最低價格：</b>${min} 元/公斤（${minRow ? minRow.date : ''}）`;
+      statsDiv.style.display = '';
+    }
+
     let chartEnabled = false;
     document.getElementById('toggleChartBtn').onclick = async function() {
       chartEnabled = !chartEnabled;
       const chart = document.getElementById('chart');
+      const statsDiv = document.getElementById('chartStats');
       if (chartEnabled) {
         chart.style.display = '';
         this.textContent = '隱藏圖表統計';
         // 若已查詢過則直接顯示圖表
         const allData = await fetchAllQueryData(lastQuery);
         renderChart(allData);
+        renderChartStats(allData);
       } else {
         chart.style.display = 'none';
+        statsDiv.style.display = 'none';
         this.textContent = '啟用圖表統計';
       }
     };
@@ -379,4 +483,3 @@
 </body>
 
 </html>
-
